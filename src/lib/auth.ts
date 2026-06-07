@@ -24,7 +24,7 @@ export function createToken(user: { id: number; role: string; name: string }): s
 
 export function decodeToken(token: string): { sub: number; role: string; name: string } | null {
   try {
-    const payload = jwt.verify(token, APP_SECRET) as { sub: number; role: string; name: string };
+    const payload = jwt.verify(token, APP_SECRET) as unknown as { sub: number; role: string; name: string };
     return payload;
   } catch {
     return null;

@@ -1,0 +1,265 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  name          String   @db.VarChar(120)
+  email         String   @unique @db.VarChar(160)
+  password_hash String   @db.VarChar(255)
+  phone         String?  @db.VarChar(40)
+  role          UserRole
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+
+  doctor  Doctor?
+  patient Patient?
+
+  @@map("users")
+}
+
+model Doctor {
+  id               Int     @id @default(autoincrement())
+  user_id          Int     @unique
+  license_number   String  @db.VarChar(80)
+  qualification    String  @db.VarChar(160)
+  bio              String?
+  consultation_fee Decimal @default(0) @db.Decimal(10, 2)
+  experience_years Int     @default(0)
+
+  user           User                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  specialties    DoctorSpecialty[]
+  availability   DoctorAvailability[]
+  appointments   Appointment[]
+  visits         Visit[]
+  payments       Payment[]
+  ai_assessments AiAssessment[]
+
+  @@map("doctors")
+}
+
+model Specialty {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique @db.VarChar(120)
+  description String?
+
+  doctor_specialties DoctorSpecialty[]
+
+  @@map("specialties")
+}
+
+model DoctorSpecialty {
+  doctor_id    Int
+  specialty_id Int
+
+  doctor    Doctor    @relation(fields: [doctor_id], references: [id], onDelete: Cascade)
+  specialty Specialty @relation(fields: [specialty_id], references: [id], onDelete: Cascade)
+
+  @@id([doctor_id, specialty_id])
+  @@map("doctor_specialties")
+}
+
+model DoctorAvailability {
+  id                    Int     @id @default(autoincrement())
+  doctor_id             Int
+  day_of_week           Int
+  start_time            String  @db.VarChar(8)
+  end_time              String  @db.VarChar(8)
+  slot_duration_minutes Int     @default(30)
+  is_active             Boolean @default(true)
+
+  doctor Doctor @relation(fields: [doctor_id], references: [id], onDelete: Cascade)
+
+  @@map("doctor_availability")
+}
+
+model Patient {
+  id                      Int     @id @default(autoincrement())
+  user_id                 Int     @unique
+  date_of_birth           String  @db.VarChar(20)
+  gender                  String  @db.VarChar(30)
+  blood_group             String? @db.VarChar(10)
+  address                 String?
+  emergency_contact_name  String? @db.VarChar(120)
+  emergency_contact_phone String? @db.VarChar(40)
+
+  user            User                    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  appointments    Appointment[]
+  medical_history PatientMedicalHistory[]
+  allergies       PatientAllergy[]
+  lab_reports     LabReport[]
+  visits          Visit[]
+  payments        Payment[]
+  ai_assessments  AiAssessment[]
+
+  @@map("patients")
+}
+
+model PatientMedicalHistory {
+  id             Int     @id @default(autoincrement())
+  patient_id     Int
+  condition_name String  @db.VarChar(160)
+  description    String?
+  diagnosed_at   String? @db.VarChar(20)
+  is_chronic     Boolean @default(false)
+
+  patient Patient @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+
+  @@map("patient_medical_history")
+}
+
+model PatientAllergy {
+  id           Int             @id @default(autoincrement())
+  patient_id   Int
+  allergy_name String          @db.VarChar(160)
+  severity     AllergySeverity @default(low)
+  notes        String?
+
+  patient Patient @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+
+  @@map("patient_allergies")
+}
+
+model Appointment {
+  id               Int               @id @default(autoincrement())
+  patient_id       Int
+  doctor_id        Int
+  appointment_date String            @db.VarChar(20)
+  start_time       String            @db.VarChar(8)
+  end_time         String            @db.VarChar(8)
+  status           AppointmentStatus @default(pending)
+  reason_for_visit String?
+  created_by       Int?
+  created_at       DateTime          @default(now())
+
+  patient Patient @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  doctor  Doctor  @relation(fields: [doctor_id], references: [id], onDelete: Cascade)
+  visit   Visit?
+  payment Payment?
+
+  @@unique([doctor_id, appointment_date, start_time], name: "uq_doctor_slot")
+  @@map("appointments")
+}
+
+model Visit {
+  id                Int     @id @default(autoincrement())
+  appointment_id    Int     @unique
+  patient_id        Int
+  doctor_id         Int
+  symptoms          String?
+  vitals            Json?
+  examination_notes String?
+  diagnosis         String?
+  treatment_plan    String?
+  follow_up_date    String? @db.VarChar(20)
+
+  appointment    Appointment    @relation(fields: [appointment_id], references: [id], onDelete: Cascade)
+  patient        Patient        @relation(fields: [patient_id], references: [id])
+  doctor         Doctor         @relation(fields: [doctor_id], references: [id])
+  lab_reports    LabReport[]
+  ai_assessments AiAssessment[]
+
+  @@map("visits")
+}
+
+model LabReport {
+  id          Int      @id @default(autoincrement())
+  patient_id  Int
+  visit_id    Int?
+  uploaded_by Int?
+  report_name String   @db.VarChar(160)
+  file_url    String
+  report_type String?  @db.VarChar(100)
+  notes       String?
+  uploaded_at DateTime @default(now())
+
+  patient Patient @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  visit   Visit?  @relation(fields: [visit_id], references: [id])
+
+  @@map("lab_reports")
+}
+
+model Payment {
+  id             Int           @id @default(autoincrement())
+  appointment_id Int           @unique
+  patient_id     Int
+  doctor_id      Int
+  amount         Decimal       @db.Decimal(10, 2)
+  payment_method PaymentMethod @default(cash)
+  payment_status PaymentStatus @default(pending)
+  paid_at        DateTime?
+
+  appointment Appointment @relation(fields: [appointment_id], references: [id], onDelete: Cascade)
+  patient     Patient     @relation(fields: [patient_id], references: [id])
+  doctor      Doctor      @relation(fields: [doctor_id], references: [id])
+
+  @@map("payments")
+}
+
+model AiAssessment {
+  id                 Int       @id @default(autoincrement())
+  visit_id           Int
+  patient_id         Int
+  doctor_id          Int
+  risk_level         RiskLevel
+  possible_diagnoses Json?
+  recommended_tests  Json?
+  precautions        Json?
+  natural_remedies   Json?
+  warnings           Json?
+  ai_model           String?   @db.VarChar(100)
+  prompt_version     String?   @db.VarChar(40)
+  created_at         DateTime  @default(now())
+
+  visit   Visit   @relation(fields: [visit_id], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patient_id], references: [id])
+  doctor  Doctor  @relation(fields: [doctor_id], references: [id])
+
+  @@map("ai_assessments")
+}
+
+enum UserRole {
+  admin
+  doctor
+  patient
+}
+
+enum AllergySeverity {
+  low
+  medium
+  high
+}
+
+enum AppointmentStatus {
+  pending
+  confirmed
+  completed
+  cancelled
+  no_show
+}
+
+enum PaymentMethod {
+  cash
+  card
+  bank_transfer
+  online
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  refunded
+  cancelled
+}
+
+enum RiskLevel {
+  low
+  medium
+  high
+}
